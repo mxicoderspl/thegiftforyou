@@ -1,0 +1,419 @@
+<?php
+
+ob_start();
+if (!defined('BASEPATH'))
+    exit('No direct script access allowed');
+
+class MY_Controller extends CI_Controller {
+
+    function __construct() {
+        parent::__construct();
+
+        if (!$this->session->userdata('zsms_admin')) {
+            redirect('Login', 'refresh');
+        }
+
+        $this->data['adminID'] = $this->session->userdata('zsms_admin');
+        $this->data['is_superadmin'] = $this->session->userdata('is_superadmin');
+
+        $adminDetails = $this->common->select_data_by_id('admin_user', 'id', $this->data['adminID'], '*', '', array());
+        //Admin Email details  
+        $admin_email = $this->common->get_all_record('member', '*', 'id', $this->data['adminID']);
+        $member_id = $admin_email[0]['id'];
+
+        $this->data['user_name'] = $adminDetails[0]['username'];
+        $this->data['email'] = $admin_email[0]['email_address'];
+
+        //get site related setting details
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '1', '*', array());
+        $this->data['SITE_NAME'] = $app_name[0]['config_value'];
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '12', '*', array());
+        $this->data['site_email'] = $app_name[0]['config_value'];
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '2', '*', array());
+        $this->data['SITE_LOGO'] = $app_name[0]['config_value'];
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '3', '*', array());
+        $this->data['PAGE_RECORD'] = $app_name[0]['config_value'];
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '4', '*', array());
+        $this->data['DATE_FORMAT'] = $app_name[0]['config_value'];
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '5', '*', array());
+        $this->data['TIME_FORMAT'] = $app_name[0]['config_value'];
+        $app_name = $this->common->select_data_by_id('config_control', 'id', '16', '*', array());
+        $this->data['CURRENCY_SIGN'] = $app_name[0]['config_value'];
+
+        $this->data['main_menu'] = $this->common->select_data_by_condition('menu', array('is_active' => '1'), '*', 'sort_order', 'ASC', '', '', array());
+        $this->data['menu'] = $this->common->display_menu($this->data['main_menu']);
+        //$this->data['new_main_menu']=$this->common->display_menu($this->data['main_menu']);
+        //Load header and save in variable
+
+        if (!$this->session->userdata('academic_year_id')) {
+            $currentYear = $this->common->select_data_by_condition('academic_year', array('year' => date('Y')), 'id,year,start_date,end_date', 'year', 'DESC', '', '', array());
+            $this->session->set_userdata('academic_year_id', (count($currentYear)) ? $currentYear[0]['id'] : 0);
+            $academicYearId = $this->session->userdata('academic_year_id');
+            $this->data['holidays'] = $this->common->select_data_by_condition('holidays', array("academic_year_id" => $academicYearId), '*', '', '', '', '', array());
+        }
+        $this->data['academic_years'] = $this->common->select_data_by_condition('academic_year', array(), 'id,year,start_date,end_date', 'year', 'DESC', '', '', array());
+
+        $weekday = $this->common->select_data_by_condition('config_control', array("config_control.id" => 24), 'config_value', '', '', '', '', array());
+        $this->data['weekdays'] = $weekday[0]['config_value'];
+    }
+
+    function isCurrentDateYear() {
+
+        $year_detail = $this->common->select_data_by_id('academic_year', 'id', $this->session->userdata('academic_year_id'), '*');
+        $today = date('Y-m-d');
+        if (count($year_detail) > 0) {
+            if (strtotime($today) >= strtotime($year_detail[0]['start_date']) && strtotime($today) <= strtotime($year_detail[0]['end_date'])) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+
+    /** Ali 31-08-2016 **/
+    function getCurrentYearStartDate() {
+        $year_detail = $this->common->select_data_by_id('academic_year', 'id', $this->session->userdata('academic_year_id'), '*');
+        $academic_year_id=$this->session->userdata('academic_year_id');
+        return $current_year_start_date = $year_detail[0]['start_date'];
+    }
+    
+    /** Ali 31-08-2016 **/
+    function getNextYearStartDate() {
+        $academic_year_id=$this->session->userdata('academic_year_id');
+        $academic_nextyear_id=$academic_year_id+1;
+        $next_year_detail = $this->common->select_data_by_id('academic_year', 'id', $academic_nextyear_id, '*');
+        if(!empty($next_year_detail)) {            
+            $nextyear_startdate = $next_year_detail[0]['start_date'];
+        } else {
+            $nextyear_startdate = '';
+        }  
+        return $nextyear_startdate;                
+    }
+
+
+    function last_url() {
+        return filter_input(INPUT_SERVER, 'HTTP_REFERER', FILTER_SANITIZE_STRING);
+    }
+
+    function pr($content) {
+        echo "<pre>";
+        print_r($content);
+        echo "</pre>";
+    }
+
+    function datetime() {
+        return date('Y-m-d H:i:s');
+    }
+
+    function last_query() {
+        echo "<pre>";
+        echo $this->db->last_query();
+        echo "</pre>";
+    }
+
+    function sendEmail($site_name, $site_email, $to_email, $subject, $mail_body) {
+
+        $this->config->load('email', TRUE);
+        $this->cnfemail = $this->config->item('email');
+
+        //Loading E-mail Class
+        $this->load->library('email');
+        $this->email->initialize($this->cnfemail);
+
+        $this->email->from($site_email, $site_name);
+
+        $this->email->to($to_email);
+
+        $this->email->subject($subject);
+        $this->email->message("<table border='0' cellpadding='0' cellspacing='0'><tr><td></td></tr><tr><td>" . $mail_body . "</td></tr></table>");
+        $this->email->send();
+        return;
+    }
+
+    function get_client_ip() {
+        $ipaddress = '';
+        if (getenv('HTTP_CLIENT_IP'))
+            $ipaddress = getenv('HTTP_CLIENT_IP');
+        else if (getenv('HTTP_X_FORWARDED_FOR'))
+            $ipaddress = getenv('HTTP_X_FORWARDED_FOR');
+        else if (getenv('HTTP_X_FORWARDED'))
+            $ipaddress = getenv('HTTP_X_FORWARDED');
+        else if (getenv('HTTP_FORWARDED_FOR'))
+            $ipaddress = getenv('HTTP_FORWARDED_FOR');
+        else if (getenv('HTTP_FORWARDED'))
+            $ipaddress = getenv('HTTP_FORWARDED');
+        else if (getenv('REMOTE_ADDR'))
+            $ipaddress = getenv('REMOTE_ADDR');
+        else
+            $ipaddress = 'UNKNOWN';
+
+        return $ipaddress;
+    }
+
+    public function getWeekDayName($key = 0) {
+        $weekdays = array('0' => 'Sunday', '1' => 'Monday', '2' => 'Tuesday', '3' => 'Wednesday', '4' => 'Thursday', '5' => 'Friday', '6' => 'Saturday');
+        if ($key > 0) {
+            return $weekdays[$key];
+        } else {
+            return $weekdays;
+        }
+    }
+
+    public static function number_of_days($day, $start, $end) {
+        $oneWeek = 7 * 24 * 60 * 60;
+        $w = array(date('w', $start), date('w', $end));
+        return floor(( $end - $start ) / $oneWeek) + ( $w[0] > $w[1] ? $w[0] <= $day || $day <= $w[1] : $w[0] <= $day && $day <= $w[1] );
+    }
+
+    public function getListOfHolidays($startDate = '', $endDate = '') {
+        $academicYearId = $this->session->userdata('academic_year_id');
+        $holidays = $this->data['holidays'] = $this->common->select_data_by_condition('holidays', array("academic_year_id" => $academicYearId), '*', '', '', '', '', array());
+
+        $countDayPerWeek = array();
+        foreach ($holidays as $holiday) {
+            if ($holiday['to_date'] != '' && $holiday['to_date'] != '0000-00-00' && $holiday['to_date'] != NULL) {
+                $diff = (strtotime($holiday['to_date']) - strtotime($holiday['from_date'])) / (60 * 60 * 24);
+                for ($i = 0; $i <= $diff; $i++) {
+                    $dates = date("Y-m-d", strtotime($holiday['from_date'] . " + " . $i . " day"));
+
+                    if ($dates >= $startDate && $dates <= $endDate) {
+                        $getWeekDayName = date("l", strtotime($dates));
+                        if (array_key_exists($getWeekDayName, $countDayPerWeek)) {
+                            $countDayPerWeek[$getWeekDayName] += 1;
+                        } else {
+                            $countDayPerWeek[$getWeekDayName] = 1;
+                        }
+                    }
+                }
+            } else {
+                if ($holiday['from_date'] >= $startDate && $holiday['from_date'] <= $endDate) {
+                    $getWeekDayName = date("l", strtotime($holiday['from_date']));
+                    if (array_key_exists($getWeekDayName, $countDayPerWeek)) {
+                        $countDayPerWeek[$getWeekDayName] += 1;
+                    } else {
+                        $countDayPerWeek[$getWeekDayName] = 1;
+                    }
+                }
+            }
+        }
+        return $countDayPerWeek;
+    }
+
+    public function getTotalDaysOfTerm($startDate, $endDate, $arrOfWeekDays = "") {
+        if ($arrOfWeekDays == "") {
+            $weekday = $this->common->select_data_by_condition('config_control', array("config_control.id" => 24), 'config_value', '', '', '', '', array());
+            $arrOfWeekDays = $weekday[0]['config_value'];
+            // $arrOfWeekDays=$this->data['weekdays'];
+        }
+        $arrOfHolidays = $this->getListOfHolidays($startDate, $endDate);
+//print_r($arrOfWeekDays);die();
+        $dayName = "";
+        for ($i = 0; $i < count($arrOfWeekDays); $i++) {
+            $dayName = $this->getWeekDayName($arrOfWeekDays[$i]);
+            $countOfWeekPerDay = 0;
+            if (array_key_exists($dayName, $arrOfHolidays)) {
+                $countOfHolidaysPerWeekDay = $arrOfHolidays[$dayName];
+            } else {
+                $countOfHolidaysPerWeekDay = 0;
+            }
+            $countOfWeekPerDay = $this->number_of_days($arrOfWeekDays[$i], strtotime($startDate), strtotime($endDate));
+            $countPerDay[$dayName] = $countOfWeekPerDay - $countOfHolidaysPerWeekDay;
+        }
+        //echo "<pre>";
+        //print_r($countPerDay);
+        //exit; 
+        return $countPerDay;
+    }
+
+    public static function getStudentAttendanceTotal($studentID, $termStartDate, $termEndDate, $minTime, $maxTime, $weekDays) {
+
+        $condition = "str_to_date(if(intime is not null and intime . != '',intime,outtime), '%H:%i:%s')";
+        $selected = "terminal_id,class_id,student_id,($conditiontime) as time";
+
+        $join_str[0]['table'] = 'biometric_terminal_allocation';
+        $join_str[0]['join_table_id'] = 'biometric_terminal_allocation.biometric_terminal_id';
+        $join_str[0]['from_table_id'] = 'biometric_student_attendance.id';
+        $join_str[0]['join_type'] = 'right';
+
+        $studentIDs = implode(",", $studentID);
+        $where_in = array("biometric_student_attendance.student_id", $studentIDs);
+        $between1 = "intime $condition  BETWEEN  $minTime  and  $maxTime";
+        $between2 = "date BETWEEN $termStartDate and  $termEndDate ";
+        $condition_arr = array("biometric_student_attendance.id !=" => "null", "biometric_student_attendance.student_id", "biometric_terminal_allocation.type" => "campus", "biometric_terminal_allocation.sub_type" => "room", "biometric_terminal_allocation.academic_year_id" => $this->data['academic_year_id'], $between1, $between2);
+
+        $orderby = "biometric_student_attendance.date ASC,$condition ASC";
+        $biometricAttendance = $this->common->select_data_by_multiple_condition('biometric_student_attendance', $condition_arr, $selected, $where_in, $orderby, '', '', $join_str, '', '');
+
+        $students = array();
+        $totalStudent = 0;
+        foreach ($biometricAttendance as $biometricAttend) {
+            $studentBiometricID = $biometricAttend["StudentID"];
+            $studentBiometricDate = $biometricAttend["Date"];
+
+            if (!array_key_exists($studentBiometricID, $students)) {
+                $students[$studentBiometricID] = array();
+            }
+            if (!array_key_exists($studentBiometricDate, $students[$studentBiometricID])) {
+                $students[$studentBiometricID][$studentBiometricDate] = $biometricAttend["Time"];
+                $totalStudent += 1;
+            }
+        }
+
+        return array("student" => $students, "total" => $totalStudent);
+    }
+
+    public function getListOfHolidayDates($startDate = "", $endDate = "") {
+        $academicYearId = $this->session->userdata('academic_year_id');
+        $holidays = $this->common->select_data_by_condition('holidays', array("academic_year_id" => $academicYearId), '*', '', '', '', '', array());
+        //echo"hi";
+        $dates = array();
+        foreach ($holidays as $holiday) {
+            if ($holiday['to_date'] != '' && $holiday['to_date'] != '0000-00-00' && $holiday['to_date'] != NULL) {
+                $diff = (strtotime($holiday['to_date']) - strtotime($holiday['from_date'])) / (60 * 60 * 24);
+                for ($i = 0; $i <= $diff; $i++) {
+                    $date = date("Y-m-d", strtotime($holiday['from_date'] . " + " . $i . " day"));
+                    if ($startDate != "" && $endDate != "") {
+                        if ($date >= $startDate && $date <= $endDate) {
+                            $dates[] = $date;
+                            $dates[$date] = date("l", strtotime($date));
+                        }
+                    } else {
+                        $dates[] = $date;
+                        $dates[$date] = date("l", strtotime($date));
+                    }
+                }
+            } else {
+                $date = date("Y-m-d", strtotime($holiday['from_date']));
+                if ($startDate != "" && $endDate != "") {
+                    if ($date >= $startDate && $date <= $endDate) {
+                        $dates[] = $date;
+                        $dates[$date] = date("l", strtotime($date));
+                    }
+                } else {
+                    $dates[] = $date;
+                    $dates[$date] = date("l", strtotime($date));
+                }
+            }
+        }
+        return $dates;
+    }
+
+    /*
+     * return the key value of the allocation forecolor class of percentage
+     */
+
+    public function get_progress_allocation_class($key) {
+        $allocation = array("1" => "red", "2" => "orange", "3" => "yellow", "4" => "correct", "5" => "blue");
+        return $allocation[$key];
+    }
+
+    /*
+     * return the progress class of allocation
+     */
+
+    public function get_progress_allocation($progress) {
+        if ($progress >= 0 && $progress < 30) {
+            $key = 1;
+        } else if ($progress >= 30 && $progress < 55) {
+            $key = 2;
+        } else if ($progress >= 55 && $progress < 70) {
+            $key = 3;
+        } else if ($progress >= 70 && $progress < 85) {
+            $key = 4;
+        } else if ($progress >= 85 && $progress <= 100) {
+            $key = 5;
+        }
+        $allocation = self::get_progress_allocation_class($key);
+        return $allocation;
+    }
+
+    /*
+     * return the key value of the allocation text bachground color class of percentage
+     */
+
+    public function get_progress_allocation_text_bgclass($key) {
+        $allocation = array("1" => "red_bg", "2" => "orange_bg", "3" => "yellow_bg", "4" => "correct_bg", "5" => "blue_bg");
+        return $allocation[$key];
+    }
+
+    /*
+     * return the key value of the allocation text bachground color class of percentage
+     */
+
+    public function get_progress_allocation_criteria($key) {
+        $allocation = array("1" => "< 30", "2" => ">= 30 and < 55", "3" => ">= 55 and < 70", "4" => ">= 70 and < 85", "5" => ">= 85");
+        return $allocation[$key];
+    }
+
+    /*
+     * return the array of the allocation text of percentage
+     */
+
+    public function get_progress_allocation_text() {
+        $allocation = array("1" => "Very Poor", "2" => "Poor", "3" => "Good", "4" => "Very Good", "5" => "Excellent");
+        krsort($allocation);
+        return $allocation;
+    }
+
+    public function getConfigValueByKey($config_key = '') {
+        $config_control = $this->common->select_data_by_condition('config_control', array("config_control.config_key" => $config_key), 'config_value', '', '', '', '', array());
+        if (!empty($config_control)) {
+            $config_value = $config_control[0]['config_value'];
+        } else {
+            $config_value = "";
+        }
+        return $config_value;
+    }
+
+    public function dateFormat() {
+        $config_control = $this->common->select_data_by_condition('config_control', array("config_control.config_key" => 'DATE_FORMAT'), 'config_value', '', '', '', '', array());
+        if (!empty($config_control)) {
+            $format = $config_control[0]['config_value'];
+        } else {
+            $format = "";
+        }
+        return $format;
+    }
+
+    public function getFirstDayOfMonth($month = '', $year = '') {
+        if (empty($month)) {
+            $month = date('m');
+        }
+        if (empty($year)) {
+            $year = date('Y');
+        }
+        $result = strtotime("{$year}-{$month}-01");
+
+        return date('Y-m-d', $result);
+    }
+
+    public function getLastDayOfMonth($month = '', $year = '') {
+        if (empty($month)) {
+            $month = date('m');
+        }
+        if (empty($year)) {
+            $year = date('Y');
+        }
+        $result = strtotime("{$year}-{$month}-01");
+        $result = strtotime('-1 second', strtotime('+1 month', $result));
+        return date('Y-m-d', $result);
+    }
+
+	public function week_start_date($wk_num, $yr, $first = 1, $format = 'Y-m-d')
+	{
+		$wk_num -= 1;
+		$wk_ts  = strtotime('+' . $wk_num . ' weeks', strtotime($yr . '0101'));
+		$mon_ts = strtotime('-' . date('w', $wk_ts) + $first . ' days', $wk_ts);
+		return date($format, $mon_ts);
+	}
+
+	public function week_end_date($wk_num, $yr, $first = 1, $format = 'Y-m-d')
+	{
+		$mon_ts = self::week_start_date($wk_num, $yr, $first, $format);
+		$date = date($format, strtotime(" + 6 day", strtotime($mon_ts)));
+		return $date;
+	}
+}

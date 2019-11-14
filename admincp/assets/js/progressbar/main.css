@@ -1,0 +1,7 @@
+body{background:#eee;font-family:Verdana, Helvetica, Arial, sans-serif;margin:0;padding:0}
+.example{ font-size: 80%;position: relative;width:325px; margin-top:15px;display:none;}
+h3 {text-align:center}
+.pbar .ui-progressbar-value {display:block !important; background: url("./images/progress.png") 0 0 repeat-x;}
+.pbar {overflow: hidden}
+.percent {position:relative;float:left;text-align:center;padding-left:25px;padding-top:2px}
+.elapsed {position:relative;text-align: right;}
